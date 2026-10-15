@@ -61,6 +61,7 @@ input[type=number]{width:100%;padding:10px;border:3px solid var(--blk);backgroun
 .mi b{font-family:var(--disp);font-size:20px;color:var(--red);display:block;font-weight:400}
 .mi span{font-size:14px}
 .combo.warn{background:var(--red);color:var(--wht)}
+textarea{width:100%;padding:8px;border:3px solid var(--blk);background:#fff;color:var(--blk);font:12px/1.4 monospace;resize:vertical;word-break:break-all}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style></head><body><main id="app"></main>
 <script>
@@ -84,6 +85,39 @@ const srsPool=(a,b)=>{const t=Date.now(),r=D.filter(e=>e[0]>=a&&e[0]<=b);return 
 const srsUpd=(no,ok)=>{const c=SR[no];if(ok){if(c&&c[1]>Date.now())return;const b=Math.min((c?c[0]:0)+1,5);SR[no]=[b,Date.now()+INT[b]*864e5]}else SR[no]=[0,Date.now()]};
 const stop=()=>{clearInterval(S.tid);S.rid++};
 
+const b64=u=>{let t='';for(let i=0;i<u.length;i+=8192)t+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return btoa(t).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')};
+const unb64=t=>{t=t.replace(/-/g,'+').replace(/_/g,'/');while(t.length%4)t+='=';const r=atob(t),u=new Uint8Array(r.length);for(let i=0;i<r.length;i++)u[i]=r.charCodeAt(i);return u};
+const pipe=async(u,S_)=>{const st=new S_('deflate-raw'),w=st.writable.getWriter();w.write(u);w.close();return new Uint8Array(await new Response(st.readable).arrayBuffer())};
+const makeCode=()=>'T1900|'+S.best+'|'+[...W].join(',')+'|'+Object.entries(SR).map(([k,v])=>k+':'+v[0]+':'+Math.round(v[1]/6e4).toString(36)).join(',');
+async function enc(t){const u=new TextEncoder().encode(t);return window.CompressionStream?'z'+b64(await pipe(u,CompressionStream)):'p'+b64(u)}
+async function dec(c){c=c.replace(/\s/g,'');let u=unb64(c.slice(1));if(c[0]==='z')u=await pipe(u,DecompressionStream);else if(c[0]!=='p')throw 0;
+ const p=new TextDecoder().decode(u).split('|');if(p[0]!=='T1900')throw 0;
+ const w=p[2]?p[2].split(',').map(Number).filter(n=>n>=1&&n<=1900):[],sr={};
+ (p[3]?p[3].split(','):[]).forEach(x=>{const [n,b,d]=x.split(':'),no=+n,bx=+b,du=parseInt(d,36)*6e4;if(no>=1&&no<=1900&&bx>=0&&bx<=5&&du>0)sr[no]=[bx,du]});
+ return {best:+p[1]||0,w,sr}}
+function options(){
+ $('#app').innerHTML=`<div class="title"><span>OPTIONS</span></div>
+ <div class="sh"><div class="panel"><label>TRANSFER CODE</label>
+ <textarea id="ec" readonly rows="4">...</textarea>
+ <div class="row"><button class="chip" id="cp">COPY CODE</button></div>
+ <div class="mi" style="border:0"><span>Paste this code into another device to carry over weak words, SRS progress and best combo.</span></div>
+ <label>IMPORT CODE</label>
+ <textarea id="ic" rows="3" placeholder="Paste code here"></textarea>
+ <div class="row"><button class="chip" id="im">IMPORT</button></div>
+ <div class="mi" style="border:0"><b id="st" style="font-size:15px"></b></div></div></div>
+ <button class="btn sec" id="bk">◀ BACK TO TITLE</button>`;
+ const st=t=>$('#st').textContent=t;let armed=false;
+ enc(makeCode()).then(c=>$('#ec').value=c);
+ $('#bk').onclick=home;
+ $('#cp').onclick=async()=>{const e=$('#ec');try{await navigator.clipboard.writeText(e.value);st('Copied!')}catch(x){e.select();try{document.execCommand('copy');st('Copied!')}catch(y){st('Select the code and copy it manually.')}}};
+ $('#ic').oninput=()=>{armed=false;$('#im').textContent='IMPORT'};
+ $('#im').onclick=async()=>{
+  const v=$('#ic').value.trim();if(!v){st('Paste a code first.');return}
+  let r;try{r=await dec(v)}catch(x){st('Invalid code.');return}
+  if(!armed){armed=true;$('#im').textContent='TAP AGAIN: OVERWRITE THIS DEVICE';st('Weak: '+r.w.length+' / SRS: '+Object.keys(r.sr).length+' words.');return}
+  W=new Set(r.w);SR=r.sr;S.best=r.best;save();armed=false;$('#im').textContent='IMPORT';st('Imported! Weak: '+r.w.length+' / SRS: '+Object.keys(r.sr).length);
+ };
+}
 function home(){
  stop(); $('#app').innerHTML=`<div class="title">TAKE YOUR<br><span>TARGET 1900</span></div>
  <div class="sub">★ ENGLISH VOCAB CALLING CARD QUIZ ★</div>
@@ -99,6 +133,7 @@ function home(){
  </div></div>
  <button class="btn" id="go">START ▶</button>
  <button class="btn sec" id="clr">RESET WEAK LIST</button>
+ <button class="btn sec" id="opt">OPTIONS</button>
  <div class="hint">BEST COMBO: ${S.best} / Keys 1-4 to answer, Enter for next</div>
  <div class="hint">SRS = due words + 10 new ones / TIME ATTACK = 60 sec</div>`;
  const sync=()=>{document.querySelectorAll('#mode button').forEach(b=>b.classList.toggle('on',b.dataset.m===S.mode));document.querySelectorAll('#wo button').forEach(b=>b.classList.toggle('on',(b.dataset.w==='1'&&S.wrongOnly)||(b.dataset.w==='2'&&S.srsMode)||(b.dataset.w==='0'&&!S.wrongOnly&&!S.srsMode)));document.querySelectorAll('#len button').forEach(b=>b.classList.toggle('on',b.dataset.l===S.len))};
@@ -108,6 +143,7 @@ function home(){
  document.querySelectorAll('#len button').forEach(b=>b.onclick=()=>{S.len=b.dataset.l;sync()});
  document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{const [a,b]=c.dataset.r.split(',');$('#f').value=a;$('#t').value=b});
  $('#clr').onclick=()=>{W.clear();save();home()};
+ $('#opt').onclick=options;
  $('#go').onclick=()=>{
   let a=Math.max(1,Math.min(1900,+$('#f').value||1)),b=Math.max(1,Math.min(1900,+$('#t').value||1900));if(a>b)[a,b]=[b,a];
   S.from=a;S.to=b;
