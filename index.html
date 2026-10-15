@@ -60,6 +60,7 @@ input[type=number]{width:100%;padding:10px;border:3px solid var(--blk);backgroun
 .mi{padding:8px 0;border-bottom:2px dashed var(--blk)}.mi:last-child{border:0}
 .mi b{font-family:var(--disp);font-size:20px;color:var(--red);display:block;font-weight:400}
 .mi span{font-size:14px}
+.combo.warn{background:var(--red);color:var(--wht)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style></head><body><main id="app"></main>
 <script>
@@ -69,17 +70,22 @@ const clean=m=>m.replace(/（[⇔≒][^）]*）/g,'').replace(/\s*⇒\s*\d+/g,''
 const short=m=>clean(m).split('；').slice(0,2).join('；');
 const kind=m=>{const f=clean(m).split('；')[0];if(/^[をに]/.test(f)||/[るうくすつぬぶむぐ]$/.test(f)&&!/^〔/.test(f))return 'v';if(/[なのい]$/.test(f))return 'a';return 'n'};
 D.forEach(e=>e.k=kind(e[2]));
-let S={from:1,to:1900,mode:'en',wrongOnly:false,len:0,n:0,total:0,limit:0,missed:[],pool:[],cur:null,ans:false,ok:0,ng:0,streak:0,best:0,flip:false};
-let W=new Set();
+let S={from:1,to:1900,mode:'en',wrongOnly:false,srsMode:false,ta:false,timeLeft:60,rid:0,tid:0,len:'0',n:0,total:0,limit:0,missed:[],pool:[],cur:null,ans:false,ok:0,ng:0,streak:0,best:0,flip:false};
+let W=new Set(),SR={};try{SR=JSON.parse(localStorage.getItem('srs1900')||'{}')}catch(e){}
 try{W=new Set(JSON.parse(localStorage.getItem('wrong1900')||'[]'));const b=localStorage.getItem('best1900');if(b)S.best=+b}catch(e){}
-const save=()=>{try{localStorage.setItem('wrong1900',JSON.stringify([...W]));localStorage.setItem('best1900',S.best)}catch(e){}};
+const save=()=>{try{localStorage.setItem('wrong1900',JSON.stringify([...W]));localStorage.setItem('best1900',S.best);localStorage.setItem('srs1900',JSON.stringify(SR))}catch(e){}};
 const rnd=n=>Math.floor(Math.random()*n);
 const shuf=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=rnd(i+1);[a[i],a[j]]=[a[j],a[i]]}return a};
 const OKW=['CORRECT!','NICE!','SPLENDID!','ALL-OUT!','GOT IT!'],NGW=['MISS...','WRONG!','TOO BAD!','NOT YET!'];
 const pickw=a=>a[rnd(a.length)];
+const INT=[0,1,3,7,14,30];
+const dueN=()=>{const t=Date.now();return Object.values(SR).filter(v=>v[1]<=t).length};
+const srsPool=(a,b)=>{const t=Date.now(),r=D.filter(e=>e[0]>=a&&e[0]<=b);return r.filter(e=>SR[e[0]]&&SR[e[0]][1]<=t).concat(r.filter(e=>!SR[e[0]]).slice(0,10))};
+const srsUpd=(no,ok)=>{const c=SR[no];if(ok){if(c&&c[1]>Date.now())return;const b=Math.min((c?c[0]:0)+1,5);SR[no]=[b,Date.now()+INT[b]*864e5]}else SR[no]=[0,Date.now()]};
+const stop=()=>{clearInterval(S.tid);S.rid++};
 
 function home(){
- $('#app').innerHTML=`<div class="title">TAKE YOUR<br><span>TARGET 1900</span></div>
+ stop(); $('#app').innerHTML=`<div class="title">TAKE YOUR<br><span>TARGET 1900</span></div>
  <div class="sub">★ ENGLISH VOCAB CALLING CARD QUIZ ★</div>
  <div class="sh"><div class="panel"><label>RANGE (No.)</label>
  <div class="row"><input type="number" id="f" min="1" max="1900" value="${S.from}"><input type="number" id="t" min="1" max="1900" value="${S.to}"></div>
@@ -87,37 +93,40 @@ function home(){
  <label>MODE</label>
  <div class="row seg" id="mode"><button data-m="en">EN→JA</button><button data-m="ja">JA→EN</button><button data-m="mix">MIX</button></div>
  <label>FILTER</label>
- <div class="row seg" id="wo"><button data-w="0">ALL</button><button data-w="1">WEAK (${W.size})</button></div>
+ <div class="row seg" id="wo"><button data-w="0">ALL</button><button data-w="1">WEAK (${W.size})</button><button data-w="2">SRS (${dueN()})</button></div>
  <label>QUESTIONS</label>
- <div class="row seg" id="len"><button data-l="0">ENDLESS</button><button data-l="10">10 QUESTIONS</button></div>
+ <div class="row seg" id="len"><button data-l="0">ENDLESS</button><button data-l="10">10 QUESTIONS</button><button data-l="t">TIME ATTACK</button></div>
  </div></div>
  <button class="btn" id="go">START ▶</button>
  <button class="btn sec" id="clr">RESET WEAK LIST</button>
- <div class="hint">BEST COMBO: ${S.best} / Keys 1-4 to answer, Enter for next</div>`;
- const sync=()=>{document.querySelectorAll('#mode button').forEach(b=>b.classList.toggle('on',b.dataset.m===S.mode));document.querySelectorAll('#wo button').forEach(b=>b.classList.toggle('on',(b.dataset.w==='1')===S.wrongOnly));document.querySelectorAll('#len button').forEach(b=>b.classList.toggle('on',+b.dataset.l===S.len))};
+ <div class="hint">BEST COMBO: ${S.best} / Keys 1-4 to answer, Enter for next</div>
+ <div class="hint">SRS = due words + 10 new ones / TIME ATTACK = 60 sec</div>`;
+ const sync=()=>{document.querySelectorAll('#mode button').forEach(b=>b.classList.toggle('on',b.dataset.m===S.mode));document.querySelectorAll('#wo button').forEach(b=>b.classList.toggle('on',(b.dataset.w==='1'&&S.wrongOnly)||(b.dataset.w==='2'&&S.srsMode)||(b.dataset.w==='0'&&!S.wrongOnly&&!S.srsMode)));document.querySelectorAll('#len button').forEach(b=>b.classList.toggle('on',b.dataset.l===S.len))};
  sync();
  document.querySelectorAll('#mode button').forEach(b=>b.onclick=()=>{S.mode=b.dataset.m;sync()});
- document.querySelectorAll('#wo button').forEach(b=>b.onclick=()=>{S.wrongOnly=b.dataset.w==='1';sync()});
- document.querySelectorAll('#len button').forEach(b=>b.onclick=()=>{S.len=+b.dataset.l;sync()});
+ document.querySelectorAll('#wo button').forEach(b=>b.onclick=()=>{S.wrongOnly=b.dataset.w==='1';S.srsMode=b.dataset.w==='2';sync()});
+ document.querySelectorAll('#len button').forEach(b=>b.onclick=()=>{S.len=b.dataset.l;sync()});
  document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{const [a,b]=c.dataset.r.split(',');$('#f').value=a;$('#t').value=b});
  $('#clr').onclick=()=>{W.clear();save();home()};
  $('#go').onclick=()=>{
   let a=Math.max(1,Math.min(1900,+$('#f').value||1)),b=Math.max(1,Math.min(1900,+$('#t').value||1900));if(a>b)[a,b]=[b,a];
   S.from=a;S.to=b;
-  S.pool=D.filter(e=>e[0]>=a&&e[0]<=b&&(!S.wrongOnly||W.has(e[0])));
-  if(S.pool.length<1){alert('No words available.');return}
-  startRound(S.pool,S.len);
+  S.pool=S.srsMode?srsPool(a,b):D.filter(e=>e[0]>=a&&e[0]<=b&&(!S.wrongOnly||W.has(e[0])));
+  if(S.pool.length<1){alert(S.srsMode?'Nothing due. Come back later!':'No words available.');return}
+  startRound(S.pool,S.len==='10'?10:(S.srsMode&&S.len!=='t'?S.pool.length:0),S.len==='t');
  };
 }
-function startRound(pool,limit){
+function tick(){S.timeLeft--;const t=$('#tm');if(t){t.textContent='⏱ '+S.timeLeft;t.classList.toggle('warn',S.timeLeft<=10)}if(S.timeLeft<=0)result()}
+function startRound(pool,limit,ta){
+ stop();S.ta=!!ta;S.timeLeft=60;if(S.ta)S.tid=setInterval(tick,1000);
  S.ok=S.ng=S.streak=0;S.n=0;S.missed=[];S.pool=pool;S.limit=limit;
  S.bag=limit?shuf(pool).slice(0,limit):[];S.total=limit?S.bag.length:0;next();
 }
 function result(){
- const m=S.missed,tot=S.total,acc=Math.round(S.ok/tot*100);
- $('#app').innerHTML=`<div class="title"><span>RESULT</span></div>
+ stop();const m=S.missed,tot=S.ta?S.n:S.total,acc=tot?Math.round(S.ok/tot*100):0;
+ $('#app').innerHTML=`<div class="title"><span>${S.ta?'TIME UP!':'RESULT'}</span></div>
  <div class="score">${S.ok}<small> / ${tot}</small></div>
- <div class="rate">${m.length?'ACCURACY '+acc+'%':'PERFECT! ★★★'}</div>
+ <div class="rate">${!tot?'NO ANSWERS':m.length?'ACCURACY '+acc+'%':'PERFECT! ★★★'}</div>
  ${m.length?`<div class="sh"><div class="panel"><div class="mh">MISSED WORDS (${m.length})</div>${m.map(e=>`<div class="mi"><b>${e[1]}</b><span>No.${e[0]}　${clean(e[2])}</span></div>`).join('')}</div></div>`:''}
  ${m.length?'<button class="btn" id="rv">REVIEW MISSED ▶</button>':''}
  <button class="btn ${m.length?'sec':''}" id="hm">BACK TO TITLE</button>`;
@@ -137,7 +146,7 @@ function next(){
 }
 function render(){
  const c=S.cur,tot=S.ok+S.ng,acc=tot?Math.round(S.ok/tot*100):0,good=S.picked===c;
- let h=`<div class="top"><button id="back">◀ BACK</button>${S.limit?`<span class="combo">Q ${S.ans?S.n:S.n+1} / ${S.total}</span>`:''}<span class="combo">COMBO ${S.streak}</span></div>
+ let h=`<div class="top"><button id="back">◀ BACK</button>${S.limit?`<span class="combo">Q ${S.ans?S.n:S.n+1} / ${S.total}</span>`:''}${S.ta?`<span class="combo${S.timeLeft<=10?' warn':''}" id="tm">⏱ ${S.timeLeft}</span>`:''}<span class="combo">COMBO ${S.streak}</span></div>
  <div class="stat"><div><b>${S.ok}</b><span>CORRECT</span></div><div><b>${S.ng}</b><span>MISS</span></div><div><b>${acc}%</b><span>RATE</span></div></div>
  <div class="sh"><div class="q"><span class="no">No.${c[0]}</span><h2 class="${S.flip?'ja':''}">${S.flip?short(c[2]):c[1]}</h2><small>${S.flip?'Which English word means this?':'PICK THE MEANING!'}</small></div></div>`;
  S.opts.forEach((o,i)=>{let cls='';if(S.ans){cls=o===c?'ok':(o===S.picked?'ng':'dim')}
@@ -150,10 +159,11 @@ function render(){
 }
 function pick(i){
  if(S.ans)return;S.ans=true;S.n++;S.picked=S.opts[i];
- if(S.picked===S.cur){S.ok++;S.streak++;S.msg=pickw(OKW);if(S.streak>S.best)S.best=S.streak;if(S.wrongOnly)W.delete(S.cur[0])}
- else{S.ng++;S.streak=0;S.missed.push(S.cur);S.msg=pickw(NGW);W.add(S.cur[0])}
+ if(S.picked===S.cur){S.ok++;S.streak++;S.msg=pickw(OKW);if(S.streak>S.best)S.best=S.streak;if(S.wrongOnly)W.delete(S.cur[0]);srsUpd(S.cur[0],true)}
+ else{S.ng++;S.streak=0;S.missed.push(S.cur);S.msg=pickw(NGW);W.add(S.cur[0]);srsUpd(S.cur[0],false)}
  save();render();
  if(S.picked!==S.cur)document.querySelector('.q').classList.add('shake');
+ if(S.picked===S.cur&&S.ta){const r=S.rid;setTimeout(()=>{if(r===S.rid&&S.ans)next()},450)}
 }
 document.addEventListener('keydown',e=>{
  if(!S.cur||!$('.ch'))return;
